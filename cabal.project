@@ -1,2 +1,10 @@
-packages:
-  .
+packages: .
+
+source-repository-package
+  type: git
+  location: https://github.com/bglgwyng/hackage-security.git
+  tag: ca47ba4b7604aa7d15d151be118ed981cf7562c1
+  subdir: hackage-security
+  --sha256: 0kfgfq32s6qa22fgksmygqn1yryhaapclfj4ly6sax4xb7w60ryw
+
+  

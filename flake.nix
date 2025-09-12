@@ -1,41 +1,54 @@
 {
-  description = "Description for the project";
+  description = "A very basic flake";
 
-  inputs = {
-    flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    haskell-flake.url = "github:srid/haskell-flake";
-    hackage-security = {
-      url = "github:bglgwyng/hackage-security?ref=export-rebuildTarIndex";
-      flake = false;
-    };
+  nixConfig = {
+    trusted-public-keys = [ "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" ];
+    substituters = [ "https://cache.iog.io" ];
   };
 
-  outputs = inputs@{ flake-parts, ... }:
-    flake-parts.lib.mkFlake { inherit inputs; } {
-      imports = [
-        inputs.haskell-flake.flakeModule
-      ];
-      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-      perSystem = { config, self', inputs', pkgs, system, ... }: {
-        haskellProjects.default = {
-          projectRoot = pkgs.lib.fileset.toSource {
-            root = ./.;
-            fileset = pkgs.lib.fileset.unions [
-              ./cabal.project
-              ./nix-x-cabal-utils.cabal
-              ./exe
-            ];
-          };
-          packages = {
-            hackage-security.source = "${inputs.hackage-security}/hackage-security";
-          };
-          devShell = {
-            tools = hpkgs: {
-              inherit (hpkgs) cabal-fmt fourmolu;
-            };
-          };
+  inputs = {
+    haskellNix.url = "github:input-output-hk/haskell.nix";
+    nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
+      let
+        overlays = [
+          haskellNix.overlay
+          (final: _prev: {
+            # This overlay adds our project to pkgs
+            nix-x-cabal-utils =
+              final.haskell-nix.project' {
+                src = ./.;
+                compiler-nix-name = "ghc982";
+                # This is used by `nix develop .` to open a shell for use with
+                # `cabal`, `hlint` and `haskell-language-server`
+                shell.tools = {
+                  cabal = { };
+                  # hlint = {};
+                  # haskell-language-server = {};
+                };
+                # Non-Haskell shell tools go here
+                shell.buildInputs = with pkgs; [
+                  nixpkgs-fmt
+                ];
+                # This adds `js-unknown-ghcjs-cabal` to the shell.
+                # shell.crossPlatforms = p: [p.ghcjs];
+              };
+          })
+        ];
+        pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
+        flake = pkgs.nix-x-cabal-utils.flake {
+          # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
+          # crossPlatforms = p: [p.ghcjs];
         };
-      };
-    };
+      in
+      flake // {
+        # Built by `nix build .`
+        packages.generate-noindex-cache = flake.packages."nix-x-cabal-utils:exe:generate-noindex-cache";
+        packages.generate-secure-repo-index-cache = flake.packages."nix-x-cabal-utils:exe:generate-secure-repo-index-cache";
+
+      });
 }

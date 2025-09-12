@@ -56,7 +56,7 @@ common warnings
 
 common dependencies
   build-depends:
-    , base              ^>=4.19.2.0
+    , base
     , Cabal
     , cabal-install
     , hackage-security
@@ -74,13 +74,12 @@ executable generate-noindex-cache
   -- Base language which the package is written in.
   default-language: GHC2021
 
-executable generate-secure-repo-index
+executable generate-secure-repo-index-cache
   -- Import common warning flags.
   import:             warnings, dependencies
 
   -- .hs or .lhs file containing the Main module.
-  build-depends:      time ^>=1.12.2
-  main-is:            generate-secure-repo-index.hs
+  main-is:            generate-secure-repo-index-cache.hs
 
   -- Directories containing source files.
   hs-source-dirs:     exe
