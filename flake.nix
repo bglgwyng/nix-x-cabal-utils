@@ -47,8 +47,8 @@
       in
       flake // {
         # Built by `nix build .`
-        packages.generate-noindex-cache = flake.packages."nix-x-cabal-utils:exe:generate-noindex-cache";
-        packages.generate-secure-repo-index-cache = flake.packages."nix-x-cabal-utils:exe:generate-secure-repo-index-cache";
+        packages.generate-noindex-cache = "${flake.packages."nix-x-cabal-utils:exe:generate-noindex-cache"}/bin/generate-noindex-cache";
+        packages.generate-secure-repo-index-cache = "${flake.packages."nix-x-cabal-utils:exe:generate-secure-repo-index-cache"}/bin/generate-secure-repo-index-cache";
 
       });
 }
