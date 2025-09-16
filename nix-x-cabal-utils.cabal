@@ -12,7 +12,7 @@ cabal-version:   3.0
 --   http://haskell.org/cabal/users-guide/
 --
 -- The name of the package.
-name:            nix-x-cabal-utils
+name: nix-x-cabal-utils
 
 -- The package version.
 -- See the Haskell package versioning policy (PVP) for standards
@@ -61,12 +61,12 @@ common dependencies
     , cabal-install
     , hackage-security
 
-executable generate-noindex-cache
+executable generate-no-index-cache
   -- Import common warning flags.
   import:           warnings, dependencies
 
   -- .hs or .lhs file containing the Main module.
-  main-is:          generate-noindex-cache.hs
+  main-is:          generate-no-index-cache.hs
 
   -- Directories containing source files.
   hs-source-dirs:   exe
