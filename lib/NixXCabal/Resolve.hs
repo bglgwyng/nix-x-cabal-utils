@@ -1,43 +1,83 @@
-module NixXCabal.Resolve (resolvePackages, resolvePackagesWithResolution) where
+module NixXCabal.Resolve (resolvePackagesWithResolution) where
 
-import Data.Maybe (mapMaybe)
-import Distribution.Client.Dependency (PackageSpecifier (NamedPackage), addConstraints, foldProgress, removeLowerBounds, removeUpperBounds, resolveDependencies, standardInstallPolicy)
+import Data.Foldable
+import Data.Function
+import Data.List (intercalate)
+import Data.Map.Strict qualified as M
+import Data.Map.Strict qualified as Map
+import Distribution.Client.Dependency (PackageProperty (..), PackageSpecifier (NamedPackage), foldProgress, removeLowerBounds, removeUpperBounds, resolveDependencies, setSolveExecutables, standardInstallPolicy)
+import Distribution.Client.SolverInstallPlan hiding (toList)
 import Distribution.Client.SolverInstallPlan qualified as SolverInstallPlan
 import Distribution.Client.Types (SourcePackageDb)
-import Distribution.Client.Types.AllowNewer (AllowNewer (..), AllowOlder (..), RelaxDeps (RelaxDepsSome))
+import Distribution.Client.Types.AllowNewer
+  ( AllowNewer (..),
+    AllowOlder (..),
+    RelaxDepScope (..),
+    RelaxDeps (..),
+    RelaxedDep (..),
+  )
 import Distribution.Client.Types.PackageLocation (UnresolvedPkgLoc)
 import Distribution.Compiler (CompilerInfo)
-import Distribution.Package (PackageName)
+import Distribution.Package (PackageName, packageName)
+import Distribution.PackageDescription (mkFlagAssignment)
+import Distribution.Pretty (prettyShow)
 import Distribution.Simple.PackageIndex (InstalledPackageIndex)
 import Distribution.Solver.Types.PkgConfigDb (pkgConfigDbFromList)
-import Distribution.Solver.Types.SolverPackage (SolverPackage (..))
-import Distribution.Solver.Types.SourcePackage (SourcePackage (..))
+import Distribution.Solver.Types.Settings (SolveExecutables (SolveExecutables))
 import Distribution.System (Platform)
-import NixXCabal.PackagesConfig (ResolutionConfig (..))
+import NixXCabal.PackagesConfig (PackageConfig (..))
 
-resolvePackages :: Platform -> CompilerInfo -> InstalledPackageIndex -> SourcePackageDb -> [PackageName] -> Either String [SourcePackage UnresolvedPkgLoc]
-resolvePackages platform compiler installed source names = resolvePackagesWithResolution emptyResolution platform compiler installed source names
-
-emptyResolution :: ResolutionConfig
-emptyResolution = ResolutionConfig (AllowNewer (RelaxDepsSome [])) (AllowOlder (RelaxDepsSome [])) []
-
-resolvePackagesWithResolution :: ResolutionConfig -> Platform -> CompilerInfo -> InstalledPackageIndex -> SourcePackageDb -> [PackageName] -> Either String [SourcePackage UnresolvedPkgLoc]
-resolvePackagesWithResolution resolution platform compiler installed source names =
+resolvePackagesWithResolution :: Platform -> CompilerInfo -> InstalledPackageIndex -> SourcePackageDb -> M.Map PackageName PackageConfig -> Either String [ResolverPackage UnresolvedPkgLoc]
+resolvePackagesWithResolution platform compiler installed source packages =
   case foldProgress (\_ rest -> rest) Left Right (resolveDependencies platform compiler (Just $ pkgConfigDbFromList []) params) of
     Left err -> Left err
-    Right plan -> Right (mapMaybe sourceOfConfigured (SolverInstallPlan.toList plan))
- where
-  requested = [NamedPackage name [] | name <- names]
-  params =
-    addConstraints
-      (constraints resolution)
-      ( removeLowerBounds
-          (allowOlder resolution)
-          ( removeUpperBounds
-              (allowNewer resolution)
-              (standardInstallPolicy installed source requested)
+    Right plan ->
+      let result = SolverInstallPlan.toList plan
+       in case packageNamesWithMultipleInstances result of
+            [] -> Right result
+            names' ->
+              Left $
+                "package appears more than once in the resolved install plan: "
+                  <> intercalate ", " (prettyShow <$> names')
+  where
+    requested =
+      [ NamedPackage
+          name
+          ( [ PackagePropertyFlags . mkFlagAssignment . M.toList $ config.flags
+            | not . M.null $ config.flags
+            ]
+              <> toList (PackagePropertyVersion <$> config.version)
           )
-      )
-  sourceOfConfigured (SolverInstallPlan.Configured solverPkg) =
-    Just (solverPkgSource solverPkg)
-  sourceOfConfigured (SolverInstallPlan.PreExisting _) = Nothing
+      | (name, config) <- M.toList packages
+      ]
+    params =
+      standardInstallPolicy installed source requested
+        & removeUpperBounds (AllowNewer (RelaxDepsSome packageAllowNewer))
+        & removeLowerBounds (AllowOlder (RelaxDepsSome packageAllowOlder))
+        & setSolveExecutables (SolveExecutables True)
+
+    packageAllowNewer =
+      concatMap
+        (\(packageName', PackageConfig {allowNewer = newer}) -> packageRelaxedDeps (packageName', newer))
+        (M.toList packages)
+    packageAllowOlder =
+      concatMap
+        (\(packageName', PackageConfig {allowOlder = older}) -> packageRelaxedDeps (packageName', older))
+        (M.toList packages)
+
+    packageRelaxedDeps (packageName', values) =
+      [ RelaxedDep (RelaxDepScopePackage packageName') modifier subject
+      | (modifier, subject) <- values
+      ]
+
+packageNamesWithMultipleInstances :: [ResolverPackage UnresolvedPkgLoc] -> [PackageName]
+packageNamesWithMultipleInstances packages =
+  [ name
+  | (name, packages') <- Map.toList byName,
+    length (packages') > 1
+  ]
+  where
+    byName =
+      Map.fromListWith
+        (<>)
+        [(packageName package, [package]) | package <- packages]

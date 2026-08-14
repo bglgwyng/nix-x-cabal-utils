@@ -1,15 +1,21 @@
 import Distribution.System (buildPlatform)
-import NixXCabal.NixOutput (writeNixExpressions)
+import NixXCabal.PackagesNix (writePackagesNix)
 import Options.Applicative
 
 data Options = Options
-  { packageSetPath :: FilePath
+  { nixpkgsPath :: FilePath
+  , packageSetPath :: FilePath
   }
 
 optionsParser :: Parser Options
 optionsParser =
   Options
     <$> strOption
+      ( long "nixpkgs"
+          <> metavar "PATH"
+          <> help "Path to the nixpkgs checkout"
+      )
+    <*> strOption
       ( long "package-set"
           <> metavar "PATH"
           <> help "Path to package-set.json"
@@ -17,10 +23,10 @@ optionsParser =
 
 main :: IO ()
 main = do
-  Options{..} <-
+  Options{nixpkgsPath, packageSetPath} <-
     execParser $
       info
         (optionsParser <**> helper)
         (fullDesc <> progDesc "Generate a packages.nix")
 
-  writeNixExpressions packageSetPath buildPlatform
+  writePackagesNix nixpkgsPath packageSetPath buildPlatform

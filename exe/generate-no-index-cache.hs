@@ -8,14 +8,14 @@ import System.Environment
 
 main :: IO ()
 main = do
-  (path : _) <- getArgs
+  (path : cachePath : _) <- getArgs
   updateRepoIndexCache
     silent
     ( RepoIndex
         (RepoContext{})
         ( RepoLocalNoIndex
             { repoLocal = LocalRepo{localRepoPath = path}
-            , repoLocalDir = path
+            , repoLocalDir = cachePath
             }
         )
     )

@@ -17,6 +17,7 @@
       imports = [
         inputs.haskell-flake.flakeModule
       ];
+      transposition.lib.adHoc = true;
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -33,14 +34,25 @@
           ...
         }:
         let
-          inherit (pkgs) lib;
+          nixXCabalUtils = config.haskellProjects.default.outputs.packages."nix-x-cabal-utils".package;
+          generate-repos-config = import ./nix/generate-repos-config.nix { inherit pkgs nixXCabalUtils; };
+          generate-package-set = import ./nix/generate-package-set.nix { inherit pkgs nixXCabalUtils; };
+          generate-packages-nix = import ./nix/generate-packages-nix.nix { inherit pkgs nixXCabalUtils; };
+          fetch-hackage-index-at = import ./nix/fetch-hackage-index-at.nix { inherit pkgs nixXCabalUtils; };
         in
         {
+          lib = {
+            inherit
+              fetch-hackage-index-at
+              generate-package-set
+              generate-packages-nix
+              generate-repos-config
+              ;
+          };
           haskellProjects.default = {
             basePackages = pkgs.haskellPackages;
             packages = {
               hackage-security.source = "${inputs.hackage-security}/hackage-security";
-
             };
             otherOverlays = [
               (hfinal: hprev: {
@@ -56,12 +68,13 @@
                 cabal-install = hfinal.callHackage "cabal-install" "3.16.1.0" { };
               })
             ];
-            projectRoot = lib.fileset.toSource {
+            projectRoot = pkgs.lib.fileset.toSource {
               root = ./.;
-              fileset = lib.fileset.unions [
+              fileset = pkgs.lib.fileset.unions [
                 ./cabal.project
                 ./nix-x-cabal-utils.cabal
                 ./exe
+                ./exe/cut-index-tar.hs
                 ./lib
                 ./CHANGELOG.md
                 ./LICENSE
@@ -80,80 +93,12 @@
               "checks"
             ];
           };
-          packages.default = config.haskellProjects.default.outputs.packages.package-set-gen.package;
-          packages.hackage-cache =
-            let
-              hackage-haskell-org_01-index-tar-gz = pkgs.fetchurl {
-                url = "https://hackage.haskell.org/01-index.tar.gz";
-                hash = "sha256-bRJLiYLXfeXc6tZeCAf8cVEaMSZZ2IwvLdoy/vbUPG8=";
-              };
-              hackage-haskell-org_root-json = pkgs.fetchurl {
-                url = "https://hackage.haskell.org/root.json";
-                hash = "sha256-9i5Gy1HUpJmoM2iU16RgcbflKBNa1xYUxxAsHeCu6rw=";
-              };
-            in
-            pkgs.stdenv.mkDerivation {
-              name = "ghc914-package-set";
-              src = ./data;
-              nativeBuildInputs = [
-                config.packages.default
-              ];
-              installPhase = ''
-                mkdir -p $out
-                cd $out
 
-                ln -s ${hackage-haskell-org_01-index-tar-gz} 01-index.tar.gz
-                ln -s ${hackage-haskell-org_root-json} root.json
-                gzip -dc 01-index.tar.gz > 01-index.tar
-                package-set-gen build-index
-              '';
-            };
-          packages.ghc914-package-set = pkgs.stdenv.mkDerivation {
-            name = "ghc914-package-set";
-            src = ./data;
-            nativeBuildInputs = [
-              config.packages.default
-            ];
-            installPhase = ''
-              mkdir -p $out
-              package-set-gen build-packagedb \
-                --ghc ${pkgs.haskell.compiler.ghc914}/bin/ghc \
-                --ghc-pkg ${pkgs.haskell.compiler.ghc914}/bin/ghc-pkg \
-                --packages-config ${./data/packages.config.json} \
-                --repos-config ${
-                  pkgs.writeText "repos.config.json" (
-                    builtins.toJSON {
-                      repositories = [
-                        {
-                          "name" = "hackage.haskell.org";
-                          "type" = "remote";
-                          "url" = "https://hackage.haskell.org/";
-                          "secure" = true;
-                          "cache-directory" = config.packages.hackage-cache;
-                        }
-                      ];
+          packages.default = nixXCabalUtils;
 
-                    }
-                  )
-                } > $out/package-set.json
-            '';
-          };
-          # apps.default = {
-          #   type = "app";
-          #   program = pkgs.writeShellScriptBin "s" "${config.packages.default}/bin/package-set-gen";
-          # };
           devShells.default = pkgs.mkShell {
             inputsFrom = [
               config.haskellProjects.default.outputs.devShell
-
-            ];
-            packages = [
-              (pkgs.writeShellScriptBin "ghc916" ''
-                exec ${pkgs.haskell.compiler.ghc916}/bin/ghc "$@"
-              '')
-              (pkgs.writeShellScriptBin "ghc-pkg916" ''
-                exec ${pkgs.haskell.compiler.ghc916}/bin/ghc-pkg "$@"
-              '')
             ];
           };
         };

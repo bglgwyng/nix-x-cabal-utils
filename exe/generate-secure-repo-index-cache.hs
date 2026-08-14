@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-missing-fields #-}
-
 import Distribution.Client.IndexUtils
 import Distribution.Client.Setup
 import Distribution.Client.Types

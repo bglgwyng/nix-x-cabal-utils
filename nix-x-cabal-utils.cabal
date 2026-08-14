@@ -21,21 +21,24 @@ common language
   default-language: GHC2024
   default-extensions:
     BlockArguments
+    DeriveGeneric
     DuplicateRecordFields
+    NoFieldSelectors
     OverloadedRecordDot
-    RecordWildCards
 
 library
   import: warnings, language, dependencies
   hs-source-dirs: lib
   exposed-modules:
-    NixXCabal.NixOutput
-    NixXCabal.Output
     NixXCabal.PackageSet
     NixXCabal.PackagesConfig
+    NixXCabal.PackagesNix
     NixXCabal.ReposConfig
     NixXCabal.Repository
     NixXCabal.Resolve
+
+  other-modules:
+    NixXCabal.JSON.Orphans
 
   build-depends:
     Cabal,
@@ -46,6 +49,7 @@ library
     cabal-install-solver,
     cabal2nix,
     containers,
+    cryptohash-sha256,
     directory,
     distribution-nixpkgs,
     filepath,
@@ -54,16 +58,35 @@ library
     lens,
     network-uri,
     tar,
+    text,
+    time,
 
 executable generate-no-index-cache
   import: warnings, language, dependencies
   main-is: generate-no-index-cache.hs
   hs-source-dirs: exe
+  build-depends:
+    Cabal,
+    cabal-install,
 
 executable generate-secure-repo-index-cache
   import: warnings, language, dependencies
   main-is: generate-secure-repo-index-cache.hs
   hs-source-dirs: exe
+  build-depends:
+    Cabal,
+    base,
+    cabal-install,
+    hackage-security,
+
+executable cut-index-tar
+  import: warnings, language, dependencies
+  main-is: cut-index-tar.hs
+  hs-source-dirs: exe
+  build-depends:
+    bytestring,
+    tar,
+    time,
 
 executable generate-package-set
   import: warnings,  language, dependencies
@@ -76,7 +99,9 @@ executable generate-package-set
     base,
     bytestring,
     cabal-install,
+    cabal-install-solver,
     containers,
+    hackage-security,
     nix-x-cabal-utils,
     optparse-applicative,
 
@@ -86,11 +111,6 @@ executable generate-packages-nix
   hs-source-dirs: exe
   build-depends:
     Cabal-syntax,
-    aeson,
     base,
-    bytestring,
-    containers,
-    directory,
-    filepath,
     nix-x-cabal-utils,
     optparse-applicative,
