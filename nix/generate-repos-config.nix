@@ -39,16 +39,20 @@ let
           packageName: sourceOrVersions:
           let
             sources =
-              if builtins.isPath sourceOrVersions || (builtins.isAttrs sourceOrVersions && sourceOrVersions ? outPath) then
+              if builtins.isAttrs sourceOrVersions then
+                pkgsLib.mapAttrsToList (
+                  version: source: {
+                    inherit version;
+                    inherit source;
+                  }
+                ) sourceOrVersions
+              else
                 [
                   {
                     version = null;
-                    source =
-                      if builtins.isPath sourceOrVersions then sourceOrVersions else sourceOrVersions.outPath;
+                    source = sourceOrVersions;
                   }
-                ]
-              else
-                pkgsLib.mapAttrsToList (version: source: { inherit version source; }) sourceOrVersions;
+                ];
           in
           map (source: source // { inherit packageName; }) sources
         ) repositoryConfig);
