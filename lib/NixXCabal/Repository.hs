@@ -48,7 +48,7 @@ data PackageMetadata = PackageMetadata
   }
   deriving (Generic)
 
-type RepositoryPackageMetadata = M.Map PackageName PackageMetadata
+type RepositoryPackageMetadata = M.Map PackageId PackageMetadata
 
 data SourceMetadata = SourceMetadata
   { sourceHash :: String
@@ -172,7 +172,7 @@ readPackageCabals indexTar packageIds = do
 readPackageMetadata :: (RepoName, RepositoryConfig) -> [PackageId] -> IO RepositoryPackageMetadata
 readPackageMetadata (_, LocalRepository localConfig) packageIds = do
   entries <- catMaybes <$> traverse readLocalPackage packageIds
-  pure $ M.fromList [(packageName packageId, metadata) | (packageId, metadata) <- entries]
+  pure $ M.fromList entries
  where
   readLocalPackage packageId = do
     cabalPath <- findCabalFile (localConfig.localPath) (prettyShow (packageName packageId) <> ".cabal")
@@ -207,7 +207,7 @@ readPackageMetadata (_, RemoteRepository repoConfig) packageIds = do
   cabals <- readPackageCabals indexTar packageIds
   pure
     ( M.fromList
-        [ ( packageName packageId
+        [ ( packageId
           , PackageMetadata
               { cabalContents
               , sourceMetadata = do

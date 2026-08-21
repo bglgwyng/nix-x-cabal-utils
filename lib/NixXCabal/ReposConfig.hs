@@ -13,14 +13,14 @@ where
 import Data.Aeson (FromJSON (..), decode, withObject, withText, (.:), (.:?))
 import Data.ByteString.Lazy qualified as BL
 import Data.Map (mapKeys)
-import Data.Map.Strict qualified as Map
+import Data.Map.Strict qualified as M
 import Data.Text qualified as Text
 import Distribution.Client.IndexUtils.ActiveRepos (CombineStrategy (..))
 import Distribution.Client.Types
 import GHC.Generics (Generic)
 
 data ReposConfig = ReposConfig
-  { repositories :: Map.Map RepoName RepositoryConfig
+  { repositories :: M.Map RepoName RepositoryConfig
   , activeRepositories :: [ActiveRepository]
   }
   deriving (Generic)
@@ -37,7 +37,7 @@ instance FromJSON ReposConfig where
     active <- o .:? "active-repositories"
     selected <- case active of
       Nothing
-        | not (Map.null configured) ->
+        | not (M.null configured) ->
             fail "active-repositories must be specified when repositories are configured"
       Nothing -> pure []
       Just repositories -> pure repositories

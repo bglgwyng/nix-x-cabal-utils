@@ -1,20 +1,23 @@
-import Control.Arrow ((&&&))
 import Data.Aeson (encode)
 import Data.ByteString.Lazy qualified as BL
+import Data.Foldable qualified as F
 import Data.Map.Strict qualified as M
 import Data.Maybe
+import Data.Set qualified as S
 import Distribution.Client.IndexUtils (getInstalledPackages)
 import Distribution.Client.IndexUtils.ActiveRepos (CombineStrategy (..))
 import Distribution.Client.SolverInstallPlan
 import Distribution.Client.Types
-import Distribution.PackageDescription (unFlagAssignment)
+import Distribution.PackageDescription (GenericPackageDescription (..), setupBuildInfo, unFlagAssignment)
 import Distribution.Simple
 import Distribution.Simple.GHC qualified as GHC
 import Distribution.Simple.Program
 import Distribution.Solver.Types.PackageIndex qualified as PackageIndex
+import Distribution.Solver.Types.SolverId (solverSrcId)
 import Distribution.Solver.Types.SolverPackage
 import Distribution.Solver.Types.SourcePackage
 import Distribution.System (buildPlatform)
+import Distribution.Types.SetupBuildInfo (SetupBuildInfo (..))
 import Distribution.Verbosity
 import Hackage.Security.Client
 import Hackage.Security.Util.Path
@@ -22,7 +25,7 @@ import NixXCabal.PackageSet
 import NixXCabal.PackagesConfig
 import NixXCabal.ReposConfig
 import NixXCabal.Repository
-import NixXCabal.Resolve (resolvePackagesWithResolution)
+import NixXCabal.Resolve (Resolution (..), resolvePackagesWithResolution)
 import Options.Applicative
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
@@ -91,8 +94,13 @@ main = do
     Left err -> do
       hPutStrLn stderr err
       exitFailure
-    Right result -> do
+    Right Resolution{packages = result, libraryVersions} -> do
       let packageIds = packageId <$> result
+          preExistingIds =
+            S.fromList
+              [ packageId package
+              | package@PreExisting{} <- result
+              ]
       metadata <-
         M.fromList
           <$> traverse
@@ -108,15 +116,16 @@ main = do
             { ghc = ghcPath
             , ghcPkg = ghcPkgPath
             , reposConfig = reposConfigPath
-            , packages = M.fromList $ (((.pkgName) . packageId) &&& packageToEntry metadata config.packages) <$> result
+            , libraryVersions
+            , packages = catMaybes $ packageToEntry preExistingIds metadata config.packages <$> result
             }
 
-packageToEntry :: M.Map RepoName RepositoryPackageMetadata -> M.Map PackageName PackageConfig -> ResolverPackage UnresolvedPkgLoc -> Maybe PackageEntry
-packageToEntry _ _ PreExisting{} = Nothing
-packageToEntry metadata packages (Configured package) =
+packageToEntry :: S.Set PackageIdentifier -> M.Map RepoName RepositoryPackageMetadata -> M.Map PackageName PackageConfig -> ResolverPackage UnresolvedPkgLoc -> Maybe PackageEntry
+packageToEntry _ _ _ PreExisting{} = Nothing
+packageToEntry preExistingIds metadata packages (Configured package) =
   Just $
     PackageEntry
-      { version = packageId'.pkgVersion
+      { packageId = packageId'
       , repository = repository'
       , source = case sourceMetadata of
           Nothing -> LocalSource{localPath = url}
@@ -127,12 +136,30 @@ packageToEntry metadata packages (Configured package) =
               , remoteEditedCabal = metadata'.editedCabal
               }
       , flags = M.fromList $ unFlagAssignment package.solverPkgFlags
+      , setupDepends = setupDependencyVersions preExistingIds package
       , jailbreak = maybe False (not . null . (.allowNewer)) (M.lookup (packageName packageId') packages)
       }
  where
+  dependencyName (Dependency name _ _) = name
+  setupDependencyVersions preExistingIds' package =
+    M.fromList
+      [ ( packageName dependency
+        , if dependency `S.member` preExistingIds'
+            then Nothing
+            else Just (pkgVersion dependency)
+        )
+      | solverDependency <- concat (F.toList package.solverPkgLibDeps)
+      , let dependency = solverSrcId solverDependency
+      , packageName dependency `elem` setupDependencyNames package
+      ]
+  setupDependencyNames package =
+    maybe
+      []
+      (map dependencyName . setupDepends)
+      package.solverPkgSource.srcpkgDescription.packageDescription.setupBuildInfo
   packageId' = (packageId package)
   PackageMetadata{sourceMetadata} =
-    (metadata M.! repository') M.! packageName packageId'
+    (metadata M.! repository') M.! packageId'
   repository' =
     fromMaybe
       (error "package does not come from a repository")
